@@ -60,7 +60,7 @@ pub struct SlabFile {
     shared: Arc<Mutex<SlabShared>>,
 
     tx: Option<SyncSender<SlabData>>,
-    tid: Option<thread::JoinHandle<()>>,
+    tid: Option<thread::JoinHandle<anyhow::Result<()>>>,
 
     data_cache: DataCache,
 }
@@ -123,13 +123,15 @@ fn writer_(shared: Arc<Mutex<SlabShared>>, rx: Receiver<SlabData>) -> Result<()>
         }
     }
 
-    assert!(queued.is_empty());
+    if !queued.is_empty() {
+        return Err(anyhow!("unwritten data remains in queue"));
+    }
+
     Ok(())
 }
 
-fn writer(shared: Arc<Mutex<SlabShared>>, rx: Receiver<SlabData>) {
-    // FIXME: pass on error
-    writer_(shared, rx).expect("write of slab failed");
+fn writer(shared: Arc<Mutex<SlabShared>>, rx: Receiver<SlabData>) -> Result<()> {
+    writer_(shared, rx)
 }
 
 fn offsets_path<P: AsRef<Path>>(p: P) -> PathBuf {
@@ -317,7 +319,7 @@ impl SlabFile {
         let mut tid = None;
         std::mem::swap(&mut tid, &mut self.tid);
         if let Some(tid) = tid {
-            tid.join().expect("join failed");
+            tid.join().unwrap_or(Err(anyhow!("writer panicked")))?;
         }
 
         let shared = self.shared.lock().unwrap();

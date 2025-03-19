@@ -49,4 +49,26 @@ fn write_unordered() -> Result<()> {
     Ok(())
 }
 
+// ensure the writer returns error if there's queued data that cannot be flushed
+#[test]
+fn close_with_queued_data_should_fail() -> Result<()> {
+    let td = tempdir()?;
+    let path = td.path().join("slab_file");
+    let mut slab = SlabFileBuilder::create(path.clone()).build()?;
+
+    let (_, tx) = slab.reserve_slab();
+
+    // queue a slab ahead of the current index to make it unflushed
+    // (not possible to happen in normal use cases)
+    tx.send(SlabData {
+        index: 1,
+        data: vec![1; 1024],
+    })?;
+    drop(tx);
+
+    ensure!(slab.close().is_err());
+
+    Ok(())
+}
+
 //-----------------------------------------
