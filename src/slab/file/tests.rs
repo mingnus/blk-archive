@@ -71,4 +71,20 @@ fn close_with_queued_data_should_fail() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn write_ro_slab() -> Result<()> {
+    let td = tempdir()?;
+    let path = td.path().join("slab_file");
+    let mut slab = SlabFileBuilder::create(path.clone()).build()?;
+    slab.close()?;
+
+    std::process::Command::new("chmod").args(["-w", &path.clone().into_os_string().into_string().unwrap()]).output()?;
+    let mut slab = SlabFileBuilder::open(&path).write(true).build()?;
+    slab.write_slab(&vec![0; 512])?;
+    slab.close()?;
+    thread::sleep(std::time::Duration::from_secs(10));
+
+    Ok(())
+}
+
 //-----------------------------------------
