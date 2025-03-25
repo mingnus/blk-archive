@@ -438,7 +438,7 @@ fn thin_packer(
     let mapped_size = mappings.provisioned_blocks.len() * mappings.data_block_size as u64 * 512;
     let run_iter = RunIter::new(
         mappings.provisioned_blocks,
-        (input_size / (mappings.data_block_size as u64 * 512)) as u32,
+        thinp::math::div_up(input_size, mappings.data_block_size as u64 * 512) as u32,
     );
     let input_iter = Box::new(ThinChunker::new(
         input,
@@ -495,7 +495,7 @@ fn thin_delta_packer(
     let run_iter = DualIter::new(
         mappings.additions,
         mappings.removals,
-        (input_size / (mappings.data_block_size as u64 * 512)) as u32,
+        thinp::math::div_up(input_size, mappings.data_block_size as u64 * 512) as u32,
     );
 
     let input_iter = Box::new(DeltaChunker::new(

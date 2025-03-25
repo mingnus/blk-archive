@@ -584,7 +584,7 @@ fn thin_verifier(input_file: &Path) -> Result<VerifyDest> {
     // FIXME: what if input_size is not a multiple of the block size?
     let run_iter = RunIter::new(
         mappings.provisioned_blocks,
-        (input_size / (mappings.data_block_size as u64 * 512)) as u32,
+        thinp::math::div_up(input_size, mappings.data_block_size as u64 * 512) as u32,
     );
     let input_it = Box::new(ThinChunker::new(
         input,
