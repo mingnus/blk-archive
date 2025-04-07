@@ -31,7 +31,7 @@ mod tests;
 // slab := <magic nr> <len> <checksum> <compressed data>
 
 const FILE_MAGIC: u64 = 0xb927f96a6b611180;
-const SLAB_MAGIC: u64 = 0x20565137a3100a7c;
+pub const SLAB_MAGIC: u64 = 0x20565137a3100a7c;
 
 const FORMAT_VERSION: u32 = 0;
 
@@ -132,14 +132,14 @@ fn writer(shared: Arc<Mutex<SlabShared>>, rx: Receiver<SlabData>) {
     writer_(shared, rx).expect("write of slab failed");
 }
 
-fn offsets_path<P: AsRef<Path>>(p: P) -> PathBuf {
+pub fn offsets_path<P: AsRef<Path>>(p: P) -> PathBuf {
     let mut offsets_path = PathBuf::new();
     offsets_path.push(p);
     offsets_path.set_extension("offsets");
     offsets_path
 }
 
-fn read_slab_header(data: &mut std::fs::File) -> Result<u32> {
+pub fn read_slab_header(data: &mut std::fs::File) -> Result<u32> {
     let magic = data
         .read_u64::<LittleEndian>()
         .context("couldn't read magic")?;
