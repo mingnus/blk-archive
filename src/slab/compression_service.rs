@@ -115,7 +115,7 @@ fn compression_worker_<C: Compressor>(
             let compressed_data = match compressor.compress(&data.data) {
                 Ok(data) => data,
                 Err(e) => {
-                    let _ = error_tx.send(e.into());
+                    let _ = error_tx.send(e);
                     continue;
                 }
             };
@@ -701,7 +701,7 @@ mod tests {
         // Verify the items that were processed have the correct data
         let all_processed: Vec<SlabData> = processed_before_shutdown
             .into_iter()
-            .chain(processed_after_shutdown.into_iter())
+            .chain(processed_after_shutdown)
             .collect();
 
         for processed in &all_processed {
