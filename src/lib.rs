@@ -13,6 +13,7 @@ pub mod list;
 pub mod output;
 pub mod pack;
 pub mod paths;
+pub mod repair;
 pub mod run_iter;
 pub mod slab;
 pub mod splitter;

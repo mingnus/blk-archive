@@ -11,6 +11,7 @@ use blk_archive::dump_stream;
 use blk_archive::list;
 use blk_archive::output::Output;
 use blk_archive::pack;
+use blk_archive::repair;
 use blk_archive::unpack;
 
 //-----------------------
@@ -187,6 +188,11 @@ fn main_() -> Result<()> {
                 .about("check consistency of the archive")
                 .arg(archive_arg.clone()),
         )
+        .subcommand(
+            Command::new("repair")
+                .about("rebuild slab indexes")
+                .arg(archive_arg.clone()),
+        )
         .get_matches();
 
     let report = mk_report(&matches);
@@ -213,6 +219,9 @@ fn main_() -> Result<()> {
         }
         Some(("check", sub_matches)) => {
             check::run(sub_matches, output)?;
+        }
+        Some(("repair", sub_matches)) => {
+            repair::run(sub_matches, output)?;
         }
         Some(("dump-stream", sub_matches)) => {
             dump_stream::run(sub_matches, output)?;
