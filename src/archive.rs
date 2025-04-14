@@ -1,4 +1,5 @@
 use anyhow::Result;
+use byteorder::{LittleEndian, WriteBytesExt};
 
 use crate::cuckoo_filter::*;
 use crate::hash::*;
@@ -11,6 +12,8 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 pub const SLAB_SIZE_TARGET: usize = 4 * 1024 * 1024;
+pub const DATA_HEADER_LEN: usize = 16384;
+pub const MAX_NR_ENTRIES: usize = 2047; // FIXME: estimate properly
 
 pub struct Data {
     seen: CuckooFilter,
@@ -23,6 +26,7 @@ pub struct Data {
     current_entries: usize,
     current_index: IndexBuilder,
 
+    entries_len: Vec<u64>,
     data_buf: Vec<u8>,
     hashes_buf: Vec<u8>,
 
@@ -67,8 +71,9 @@ impl Data {
             data_file,
             hashes_file,
             current_slab: nr_slabs,
-            current_index: IndexBuilder::with_capacity(1024), // FIXME: estimate
+            current_index: IndexBuilder::with_capacity(MAX_NR_ENTRIES), // FIXME: estimate
             current_entries: 0,
+            entries_len: Vec::with_capacity(MAX_NR_ENTRIES),
             data_buf: Vec::new(),
             hashes_buf: Vec::new(),
             slabs,
@@ -136,9 +141,22 @@ impl Data {
         }
     }
 
+    fn write_data_header(&mut self) -> Result<bool> {
+        if self.current_entries == 0 {
+            return Ok(false);
+        }
+
+        let mut c = std::io::Cursor::new(&mut self.data_buf);
+        c.write_u64::<LittleEndian>(self.current_entries as u64)?;
+        for l in &self.entries_len {
+            c.write_u64::<LittleEndian>(*l)?;
+        }
+        Ok(true)
+    }
+
     fn complete_data_slab(&mut self) -> Result<()> {
-        if complete_slab(&mut self.data_file, &mut self.data_buf, 0)? {
-            let mut builder = IndexBuilder::with_capacity(1024); // FIXME: estimate properly
+        if self.write_data_header()? && complete_slab(&mut self.data_file, &mut self.data_buf, 0)? {
+            let mut builder = IndexBuilder::with_capacity(MAX_NR_ENTRIES); // FIXME: estimate properly
             std::mem::swap(&mut builder, &mut self.current_index);
             let buffer = builder.build()?;
             self.hashes_buf.write_all(&buffer[..])?;
@@ -149,6 +167,7 @@ impl Data {
             complete_slab_(&mut hashes_file, &mut self.hashes_buf)?;
             self.current_slab += 1;
             self.current_entries = 0;
+            self.entries_len.clear();
         }
         Ok(())
     }
@@ -170,8 +189,14 @@ impl Data {
             self.rebuild_index(s)?;
         }
 
-        if self.data_buf.len() as u64 + len > SLAB_SIZE_TARGET as u64 {
+        if self.current_entries >= MAX_NR_ENTRIES
+            || self.data_buf.len() as u64 + len > SLAB_SIZE_TARGET as u64
+        {
             self.complete_data_slab()?;
+        }
+
+        if self.current_entries == 0 {
+            self.data_buf.resize(DATA_HEADER_LEN, 0);
         }
 
         let r = (self.current_slab, self.current_entries as u32);
@@ -224,13 +249,19 @@ impl Data {
     ) -> (usize, usize) {
         let (data_begin, data_end) = if nr_entries == 1 {
             let (data_begin, data_end, _expected_hash) = info.get(offset as usize).unwrap();
-            (*data_begin as usize, *data_end as usize)
+            (
+                *data_begin as usize + DATA_HEADER_LEN,
+                *data_end as usize + DATA_HEADER_LEN,
+            )
         } else {
             let (data_begin, _data_end, _expected_hash) = info.get(offset as usize).unwrap();
             let (_data_begin, data_end, _expected_hash) = info
                 .get((offset as usize) + (nr_entries as usize) - 1)
                 .unwrap();
-            (*data_begin as usize, *data_end as usize)
+            (
+                *data_begin as usize + DATA_HEADER_LEN,
+                *data_end as usize + DATA_HEADER_LEN,
+            )
         };
 
         if let Some((begin, end)) = partial {
