@@ -4,9 +4,10 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use std::thread;
 
 use crate::hash::*;
@@ -59,7 +60,7 @@ pub struct SlabFile {
     offsets_path: PathBuf,
     pending_index: u64,
 
-    shared: Arc<Mutex<SlabShared>>,
+    shared: Arc<RwLock<SlabShared>>,
 
     tx: Option<SyncSender<SlabData>>,
     tid: Option<thread::JoinHandle<()>>,
@@ -81,10 +82,10 @@ impl Drop for SlabFile {
     }
 }
 
-fn write_slab(shared: &Arc<Mutex<SlabShared>>, data: &[u8]) -> Result<()> {
+fn write_slab(shared: &Arc<RwLock<SlabShared>>, data: &[u8]) -> Result<()> {
     assert!(!data.is_empty());
 
-    let mut shared = shared.lock().unwrap();
+    let mut shared = shared.write().unwrap();
 
     let offset = shared.file_size;
     shared.offsets.offsets.push(offset);
@@ -100,7 +101,7 @@ fn write_slab(shared: &Arc<Mutex<SlabShared>>, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn writer_(shared: Arc<Mutex<SlabShared>>, rx: Receiver<SlabData>) -> Result<()> {
+fn writer_(shared: Arc<RwLock<SlabShared>>, rx: Receiver<SlabData>) -> Result<()> {
     let mut write_index = 0;
     let mut queued: BTreeMap<SlabIndex, SlabData> = BTreeMap::new();
 
@@ -129,7 +130,7 @@ fn writer_(shared: Arc<Mutex<SlabShared>>, rx: Receiver<SlabData>) -> Result<()>
     Ok(())
 }
 
-fn writer(shared: Arc<Mutex<SlabShared>>, rx: Receiver<SlabData>) {
+fn writer(shared: Arc<RwLock<SlabShared>>, rx: Receiver<SlabData>) {
     // FIXME: pass on error
     writer_(shared, rx).expect("write of slab failed");
 }
@@ -201,7 +202,7 @@ impl SlabFile {
 
         let offsets = SlabOffsets::default();
         let file_size = data.metadata()?.len();
-        let shared = Arc::new(Mutex::new(SlabShared {
+        let shared = Arc::new(RwLock::new(SlabShared {
             data,
             offsets,
             file_size,
@@ -258,7 +259,7 @@ impl SlabFile {
 
         let offsets = SlabOffsets::read_offset_file(&offsets_path)?;
         let file_size = data.metadata()?.len();
-        let shared = Arc::new(Mutex::new(SlabShared {
+        let shared = Arc::new(RwLock::new(SlabShared {
             data,
             offsets,
             file_size,
@@ -299,7 +300,7 @@ impl SlabFile {
 
         let offsets = SlabOffsets::read_offset_file(&offsets_path)?;
         let file_size = data.metadata()?.len();
-        let shared = Arc::new(Mutex::new(SlabShared {
+        let shared = Arc::new(RwLock::new(SlabShared {
             data,
             offsets,
             file_size,
@@ -325,26 +326,32 @@ impl SlabFile {
             tid.join().expect("join failed");
         }
 
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.write().unwrap();
         shared.offsets.write_offset_file(&self.offsets_path)?;
         Ok(())
     }
 
-    pub fn read_(&mut self, slab: u32) -> Result<Vec<u8>> {
-        let mut shared = self.shared.lock().unwrap();
+    pub fn read_(&self, slab: u32) -> Result<Vec<u8>> {
+        let shared = self.shared.read().unwrap();
 
-        let offset = shared.offsets.offsets[slab as usize];
-        shared.data.seek(SeekFrom::Start(offset))?;
+        let mut offset = shared.offsets.offsets[slab as usize];
 
-        let magic = shared.data.read_u64::<LittleEndian>()?;
-        let len = shared.data.read_u64::<LittleEndian>()?;
+        let mut buf = [0u8; 8];
+        shared.data.read_exact_at(&mut buf, offset)?;
+        let magic = u64::from_le_bytes(buf);
         assert_eq!(magic, SLAB_MAGIC);
 
-        let mut expected_csum: Hash64 = Hash64::default();
-        shared.data.read_exact(&mut expected_csum)?;
+        offset += 8;
+        shared.data.read_exact_at(&mut buf, offset)?;
+        let len = u64::from_le_bytes(buf);
 
+        offset += 8;
+        let mut expected_csum: Hash64 = Hash64::default();
+        shared.data.read_exact_at(&mut expected_csum, offset)?;
+
+        offset += 8;
         let mut buf = vec![0; len as usize];
-        shared.data.read_exact(&mut buf)?;
+        shared.data.read_exact_at(&mut buf, offset)?;
 
         let actual_csum = hash_64(&buf);
         assert_eq!(actual_csum, expected_csum);
@@ -363,6 +370,7 @@ impl SlabFile {
         }
     }
 
+    // TODO: fine-grained lock
     pub fn read(&mut self, slab: u32) -> Result<Arc<Vec<u8>>> {
         if let Some(data) = self.data_cache.find(slab) {
             Ok(data)
@@ -371,6 +379,11 @@ impl SlabFile {
             self.data_cache.insert(slab, data.clone());
             Ok(data)
         }
+    }
+
+    pub fn read_uncached(&self, slab: u32) -> Result<Vec<u8>> {
+        let data = self.read_(slab)?;
+        Ok(data)
     }
 
     fn reserve_slab(&mut self) -> (SlabIndex, SyncSender<SlabData>) {
@@ -394,12 +407,12 @@ impl SlabFile {
     }
 
     pub fn get_nr_slabs(&self) -> usize {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.read().unwrap();
         shared.offsets.offsets.len()
     }
 
     pub fn get_file_size(&self) -> u64 {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.read().unwrap();
         shared.file_size
     }
 
