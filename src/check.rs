@@ -11,8 +11,8 @@ use crate::paths::*;
 use crate::slab::{SlabFile, SlabFileBuilder};
 
 fn check_data_and_hashes(
-    data_file: Arc<SlabFile>,
-    hashes_file: Arc<SlabFile>,
+    data_file: SlabFile,
+    hashes_file: SlabFile,
     slab_range: std::ops::Range<u32>,
 ) -> Result<()> {
     for s in slab_range {
@@ -36,17 +36,13 @@ fn check_data_and_hashes(
 fn check(archive_dir: &Path) -> Result<()> {
     env::set_current_dir(&archive_dir)?;
 
-    let data_file = Arc::new(
-        SlabFileBuilder::open(data_path())
-            .build()
-            .context("couldn't open data slab file")?,
-    );
+    let data_file = SlabFileBuilder::open(data_path())
+        .build()
+        .context("couldn't open data slab file")?;
 
-    let hashes_file = Arc::new(
-        SlabFileBuilder::open(hashes_path())
-            .build()
-            .context("couldn't open hashes slab file")?,
-    );
+    let hashes_file = SlabFileBuilder::open(hashes_path())
+        .build()
+        .context("couldn't open hashes slab file")?;
 
     let nr_data_slabs = data_file.get_nr_slabs();
 
@@ -59,16 +55,35 @@ fn check(archive_dir: &Path) -> Result<()> {
     }
 
     let nr_threads = 2;
+    let mut threads = Vec::with_capacity(nr_threads);
     let slabs_per_thread = nr_data_slabs / nr_threads;
     let mut slab_begin = 0;
-    for i in 0..nr_threads - 1 {
-        std::thread::spawn(|| {
+    for i in 0..nr_threads {
+        let data_file = SlabFileBuilder::open(data_path())
+            .build()
+            .context("couldn't open data slab file")?;
+        let hashes_file = SlabFileBuilder::open(hashes_path())
+            .build()
+            .context("couldn't open hashes slab file")?;
+
+        let slab_end = if i == nr_threads - 1 {
+            nr_data_slabs as u32
+        } else {
+            slab_begin + slabs_per_thread as u32
+        };
+        let tid = std::thread::spawn(move || {
             check_data_and_hashes(
-                data_file.clone(),
-                hashes_file.clone(),
-                slab_begin..slab_begin + slabs_per_thread as u32,
+                data_file,
+                hashes_file,
+                slab_begin..slab_end,
             )
         });
+        threads.push(tid);
+        slab_begin += slabs_per_thread as u32;
+    }
+
+    for tid in threads {
+        let _ = tid.join();
     }
 
     Ok(())
