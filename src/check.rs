@@ -34,7 +34,7 @@ fn check_data_and_hashes(
 }
 
 fn check(archive_dir: &Path) -> Result<()> {
-    env::set_current_dir(&archive_dir)?;
+    env::set_current_dir(archive_dir)?;
 
     let data_file = SlabFileBuilder::open(data_path())
         .build()
@@ -72,11 +72,7 @@ fn check(archive_dir: &Path) -> Result<()> {
             slab_begin + slabs_per_thread as u32
         };
         let tid = std::thread::spawn(move || {
-            check_data_and_hashes(
-                data_file,
-                hashes_file,
-                slab_begin..slab_end,
-            )
+            check_data_and_hashes(data_file, hashes_file, slab_begin..slab_end)
         });
         threads.push(tid);
         slab_begin += slabs_per_thread as u32;
