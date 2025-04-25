@@ -10,6 +10,7 @@ pub mod hash;
 pub mod hash_index;
 pub mod iovec;
 pub mod list;
+pub mod migrate;
 pub mod output;
 pub mod pack;
 pub mod paths;
