@@ -9,6 +9,7 @@ use blk_archive::check;
 use blk_archive::create;
 use blk_archive::dump_stream;
 use blk_archive::list;
+use blk_archive::migrate;
 use blk_archive::output::Output;
 use blk_archive::pack;
 use blk_archive::repair;
@@ -193,6 +194,20 @@ fn main_() -> Result<()> {
                 .about("rebuild slab indexes")
                 .arg(archive_arg.clone()),
         )
+        .subcommand(
+            Command::new("migrate")
+                .about("migrate the streams into a new archive")
+                .arg(archive_arg.clone())
+                .arg(
+                    Arg::new("OUTPUT_DIR")
+                        .help("Specify the output directory")
+                        .long("output-dir")
+                        .value_name("ARCHIVE")
+                        .required(true)
+                        .num_args(1),
+                )
+                .arg(data_cache_size.clone()),
+        )
         .get_matches();
 
     let report = mk_report(&matches);
@@ -222,6 +237,9 @@ fn main_() -> Result<()> {
         }
         Some(("repair", sub_matches)) => {
             repair::run(sub_matches, output)?;
+        }
+        Some(("migrate", sub_matches)) => {
+            migrate::run(sub_matches, output)?;
         }
         Some(("dump-stream", sub_matches)) => {
             dump_stream::run(sub_matches, output)?;
