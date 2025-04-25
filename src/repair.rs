@@ -35,7 +35,7 @@ fn build_hash_index(data: &[u8]) -> Result<Arc<Vec<u8>>> {
 }
 
 fn rebuild_hashes_index(archive_dir: &Path) -> Result<()> {
-    env::set_current_dir(&archive_dir)?;
+    env::set_current_dir(archive_dir)?;
 
     let mut data_file = SlabFileBuilder::open(data_path()).build()?;
     let nr_slabs = data_file.get_nr_slabs();
@@ -60,7 +60,7 @@ fn rebuild_hashes_index(archive_dir: &Path) -> Result<()> {
 }
 
 fn repair(archive_dir: &Path) -> Result<()> {
-    env::set_current_dir(&archive_dir)?;
+    env::set_current_dir(archive_dir)?;
 
     let data_offsets = rebuild_offsets(data_path())?;
     data_offsets.write_offset_file(offsets_path(data_path()))?;
