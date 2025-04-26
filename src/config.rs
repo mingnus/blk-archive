@@ -57,7 +57,11 @@ pub struct StreamConfig {
 }
 
 pub fn read_stream_config(stream_id: &str) -> Result<StreamConfig> {
-    let p = stream_config(stream_id);
+    read_stream_config_from(".", stream_id)
+}
+
+pub fn read_stream_config_from<P: AsRef<Path>>(root: P, stream_id: &str) -> Result<StreamConfig> {
+    let p = root.as_ref().join(stream_config(stream_id));
     let input =
         fs::read_to_string(&p).with_context(|| format!("couldn't read stream config '{:?}", &p))?;
     let config: StreamConfig =
@@ -66,7 +70,11 @@ pub fn read_stream_config(stream_id: &str) -> Result<StreamConfig> {
 }
 
 pub fn write_stream_config(stream_id: &str, cfg: &StreamConfig) -> Result<()> {
-    let p = stream_config(stream_id);
+    write_stream_config_to(".", stream_id, cfg)
+}
+
+pub fn write_stream_config_to<P: AsRef<Path>>(root: P, stream_id: &str, cfg: &StreamConfig) -> Result<()> {
+    let p = root.as_ref().join(stream_config(stream_id));
     let mut output = fs::OpenOptions::new()
         .read(false)
         .write(true)
