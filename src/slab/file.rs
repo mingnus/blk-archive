@@ -402,6 +402,10 @@ impl SlabFile {
         Ok(())
     }
 
+    pub fn is_compressed(&self) -> bool {
+        self.compressed
+    }
+
     pub fn index(&self) -> SlabIndex {
         self.pending_index
     }
